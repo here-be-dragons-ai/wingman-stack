@@ -16,7 +16,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 # shellcheck disable=SC1091
 if [ -f .env ]; then set -a; . ./.env; set +a; fi
 
-MODEL_URL="${MODEL_URL:-http://localhost:8888}"
+# The model server as seen from the host. LLM_UPSTREAM_URL is the *container's*
+# view of it, so only the port carries over -- host.docker.internal does not
+# resolve out here. Without this, changing the port in .env leaves this check
+# probing 8888 and calling a healthy server unreachable.
+upstream_port=$(printf '%s' "${LLM_UPSTREAM_URL:-}" \
+  | sed -n 's|^\([a-zA-Z][a-zA-Z0-9+.-]*://\)\{0,1\}[^/]*:\([0-9][0-9]*\).*|\2|p')
+
+MODEL_URL="${MODEL_URL:-http://localhost:${upstream_port:-8888}}"
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:${WINGMAN_PORT:-4242}}"
 MODEL_ALIAS="${LLM_MODEL:-Qwen3.8-27B-local}"
 GATEWAY_MODEL="${WINGMAN_MODEL:-qwen3.8-27b}"
@@ -153,24 +160,51 @@ section "5. Reasoning effort"
 # that depends on the setup: with the guard in the path it is enforced here,
 # otherwise the CLI clamps client-side from its model catalog (0.16.1+).
 
-supported=$(curl -sS -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' \
-  -X POST "$GATEWAY_URL/v1/responses" \
-  -H 'Content-Type: application/json' \
-  -d "{\"model\":\"$GATEWAY_MODEL\",\"max_output_tokens\":16,\"reasoning\":{\"effort\":\"xhigh\"},\"input\":\"Reply with the word ready.\"}" 2>&1)
+probe_code=''
+probe_error=''
 
-if [ "$supported" = "200" ]; then
+# probe_effort EFFORT -- sets $probe_code to the HTTP status of a /v1/responses
+# call at that effort, and $probe_error to whatever curl itself complained
+# about. The two must stay on separate streams: merged, an unreachable gateway
+# produces a string that matches no status we test for, and the "not 200" branch
+# below would report a dead gateway as an expected rejection.
+probe_effort() {
+  local stderr
+  stderr=$(mktemp)
+
+  probe_code=$(curl -sS -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' \
+    -X POST "$GATEWAY_URL/v1/responses" \
+    -H 'Content-Type: application/json' \
+    -d "{\"model\":\"$GATEWAY_MODEL\",\"max_output_tokens\":16,\"reasoning\":{\"effort\":\"$1\"},\"input\":\"Reply with the word ready.\"}" \
+    2>"$stderr")
+
+  probe_error=$(tr -d '\n' < "$stderr" | cut -c1-200)
+  rm -f "$stderr"
+}
+
+# curl reports 000 when it never got a response at all.
+probe_effort xhigh
+
+if [ "$probe_code" = "200" ]; then
   pass "a supported effort ('xhigh') is accepted"
+elif [ "$probe_code" = "000" ]; then
+  fail "the 'xhigh' probe never reached the gateway"
+  note "${probe_error:-curl could not complete the request}"
 else
-  fail "a supported effort ('xhigh') returned HTTP $supported"
-  note "$(printf '%s' "$supported" | cut -c1-200)"
+  fail "a supported effort ('xhigh') returned HTTP $probe_code"
+
+  if [ -n "$probe_error" ]; then note "$probe_error"; fi
 fi
 
-unsupported=$(curl -sS -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' \
-  -X POST "$GATEWAY_URL/v1/responses" \
-  -H 'Content-Type: application/json' \
-  -d "{\"model\":\"$GATEWAY_MODEL\",\"max_output_tokens\":16,\"reasoning\":{\"effort\":\"high\"},\"input\":\"Reply with the word ready.\"}" 2>&1)
+probe_effort high
+unsupported="$probe_code"
+unsupported_error="$probe_error"
 
-if [ "${guard_running:-0}" = "1" ]; then
+if [ "$unsupported" = "000" ]; then
+  # No response at all says nothing about effort handling in either direction.
+  fail "the 'high' probe never reached the gateway"
+  note "${unsupported_error:-curl could not complete the request}"
+elif [ "${guard_running:-0}" = "1" ]; then
   if [ "$unsupported" = "200" ]; then
     pass "the guard clamps 'high' (accepted, sent upstream as medium)"
   else
