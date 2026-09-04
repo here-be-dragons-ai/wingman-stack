@@ -27,7 +27,7 @@ Any other wingman provider works the same way — see
 | | |
 |---|---|
 | Docker | Docker Desktop or a compatible engine, running |
-| CLI | `brew install adrianliechti/tap/wingman-cli` — other install options in the [wingman-agent README](https://github.com/adrianliechti/wingman-agent#-installation) |
+| CLI | wingman-cli **0.16.1 or newer**: `brew install adrianliechti/tap/wingman-cli` — other install options in the [wingman-agent README](https://github.com/adrianliechti/wingman-agent#-installation) |
 | A model backend | either an API key for a hosted provider, or a local server such as [mlx-qwen38-apple-silicon](https://github.com/here-be-dragons-ai/mlx-qwen38-apple-silicon), [Ollama](https://ollama.com) or `llama.cpp` |
 
 ## Install
@@ -61,8 +61,11 @@ cd ~/your-project
 wingman
 ```
 
-The `source` sets `WINGMAN_URL`, the model and the reasoning efforts for the
-current shell; run it again in a new terminal.
+The `source` sets `WINGMAN_URL`, the model, the context window and the reasoning
+efforts for the current shell; run it again in a new terminal. With a local
+backend the context window is the one value you have to get right — the wrong
+number does not fail a request, it kills the model server later in the session.
+See [doc/qwen38-mlx.md](doc/qwen38-mlx.md#2-context-window--you-must-set-it).
 
 ```sh
 wingman                                       # TUI in the current directory
@@ -82,7 +85,7 @@ The `</dev/null` is not decorative — see
 | `compose.yaml` | the gateway services |
 | `config/platform.yaml` | wingman platform configuration: provider and model mapping |
 | `client.yaml` | the gateway↔model-server contract, cross-checked by the MLX start script |
-| `effort-guard/` | a small proxy that keeps reasoning efforts inside what the backend accepts |
+| `effort-guard/` | an optional proxy that keeps reasoning efforts inside what the backend accepts (`make up-guard`) |
 | `scripts/doctor.sh` | end-to-end verification |
 | `scripts/wingman-env.sh` | the CLI environment, source it |
 | `Makefile` | `make help` lists every target |
@@ -93,7 +96,7 @@ The `</dev/null` is not decorative — see
 |---|---|
 | [doc/architecture.md](doc/architecture.md) | how the pieces fit, why the gateway is needed, the model name chain, ports |
 | [doc/configuration.md](doc/configuration.md) | every file and variable, how to point the stack at another backend, authentication |
-| [doc/qwen38-mlx.md](doc/qwen38-mlx.md) | the Qwen3.8/MLX backend: its two constraints, and measured performance |
+| [doc/qwen38-mlx.md](doc/qwen38-mlx.md) | the Qwen3.8/MLX backend: the two constraints it imposes, how each is handled, measured performance |
 | [doc/troubleshooting.md](doc/troubleshooting.md) | symptoms and their causes, useful commands |
 
 ## Credits

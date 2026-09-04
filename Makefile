@@ -8,12 +8,16 @@ REPO_DIR  := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 START_SH  := $(MLX_REPO)/start-mlx_qwen3.8.sh
 WATCHDOG  := $(MLX_REPO)/watchdog-mlx_qwen3.8.sh
 
+# The optional effort guard lives behind a compose profile; targets that must
+# see it regardless of whether it runs pass this.
+GUARD := --profile guard
+
 # Load .env so PROFILE / KV_BITS / WINGMAN_PORT reach the recipes below.
 DOTENV := set -a; [ -f "$(REPO_DIR)/.env" ] && . "$(REPO_DIR)/.env"; set +a
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down restart logs ps build test doctor model watchdog agent
+.PHONY: help up up-guard down restart logs ps build test doctor model watchdog agent
 
 help: ## Show this help
 	@echo "Gateway:"
@@ -24,23 +28,26 @@ help: ## Show this help
 	@echo "                      make up      (terminal 2)"
 	@echo "                      make doctor  (verifies the whole chain)"
 
-up: ## Build and start the gateway
-	docker compose up -d --build
+up: ## Start the gateway
+	docker compose up -d
+
+up-guard: ## Start the gateway with the optional effort guard in front of the backend
+	LLM_URL=http://effort-guard:8080/v1 docker compose $(GUARD) up -d --build
 
 down: ## Stop and remove the gateway
-	docker compose down
+	docker compose $(GUARD) down
 
 restart: ## Recreate the gateway containers
-	docker compose up -d --build --force-recreate
+	docker compose up -d --force-recreate
 
 logs: ## Follow gateway logs
-	docker compose logs -f
+	docker compose $(GUARD) logs -f
 
 ps: ## Show gateway container status
-	docker compose ps
+	docker compose $(GUARD) ps
 
 build: ## Build the effort-guard image
-	docker compose build
+	docker compose $(GUARD) build
 
 test: ## Run the effort-guard unit tests
 	docker run --rm -v "$(REPO_DIR)/effort-guard":/src -w /src golang:1-alpine \
