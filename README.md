@@ -37,7 +37,7 @@ git clone https://github.com/here-be-dragons-ai/wingman-stack.git
 cd wingman-stack
 
 cp .env.example .env    # optional, every value has a working default
-make up                 # builds and starts the gateway
+make up                 # starts the gateway
 make doctor             # verifies the whole chain
 ```
 

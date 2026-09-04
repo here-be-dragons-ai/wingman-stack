@@ -38,8 +38,9 @@ import (
 )
 
 // supported maps an incoming effort to the nearest level the chat template
-// accepts, rounding down so a request never silently gets more reasoning than
-// it asked for.
+// accepts. Ranked values round down, so a request never silently gets more
+// reasoning than it asked for. "minimal" is the one exception: it rounds up,
+// because low is already the least the template offers while thinking is on.
 var supported = map[string]string{
 	"minimal": "low",
 	"low":     "low",
