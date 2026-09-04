@@ -12,6 +12,9 @@ WATCHDOG  := $(MLX_REPO)/watchdog-mlx_qwen3.8.sh
 # see it regardless of whether it runs pass this.
 GUARD := --profile guard
 
+# The platform's view of the guard, when the guard is in the path.
+GUARD_URL := http://effort-guard:8080/v1
+
 # Load .env so PROFILE / KV_BITS / WINGMAN_PORT reach the recipes below.
 DOTENV := set -a; [ -f "$(REPO_DIR)/.env" ] && . "$(REPO_DIR)/.env"; set +a
 
@@ -32,13 +35,22 @@ up: ## Start the gateway
 	docker compose up -d
 
 up-guard: ## Start the gateway with the optional effort guard in front of the backend
-	LLM_URL=http://effort-guard:8080/v1 docker compose $(GUARD) up -d --build
+	LLM_URL=$(GUARD_URL) docker compose $(GUARD) up -d --build
 
 down: ## Stop and remove the gateway
 	docker compose $(GUARD) down
 
-restart: ## Recreate the gateway containers
-	docker compose up -d --force-recreate
+# Recreating without the guard's profile and LLM_URL would point the platform
+# straight at the upstream while leaving the guard container running -- up but
+# bypassed, which reads as healthy in `make ps`. So follow whatever is live.
+restart: ## Recreate the gateway containers, keeping the current topology
+	@if docker compose $(GUARD) ps --services --filter status=running 2>/dev/null \
+	   | grep -qx effort-guard; then \
+	  echo "effort-guard is running; recreating with the guard in the path"; \
+	  LLM_URL=$(GUARD_URL) docker compose $(GUARD) up -d --force-recreate; \
+	else \
+	  docker compose up -d --force-recreate; \
+	fi
 
 logs: ## Follow gateway logs
 	docker compose $(GUARD) logs -f
