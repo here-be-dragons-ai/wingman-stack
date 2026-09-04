@@ -98,12 +98,25 @@ The `</dev/null` is not decorative — see
 
 ## Credits
 
-The actual work is upstream:
-[wingman](https://github.com/adrianliechti/wingman) and
-[wingman-agent](https://github.com/adrianliechti/wingman-agent) by
-[Adrian Liechti](https://github.com/adrianliechti).
+The substantial work is upstream, by
+[Adrian Liechti](https://github.com/adrianliechti):
+
+| Project | What it does | License |
+|---|---|---|
+| [wingman](https://github.com/adrianliechti/wingman) | the inference hub this repository configures — one API in front of many providers, and the Responses ⇄ chat translation the CLI depends on | [MIT](https://github.com/adrianliechti/wingman/blob/main/LICENSE), © 2023 Adrian Liechti |
+| [wingman-agent](https://github.com/adrianliechti/wingman-agent) | the terminal coding agent | [MIT](https://github.com/adrianliechti/wingman-agent/blob/main/LICENSE), © 2026 Adrian Liechti |
+
+Without them there is nothing here to configure. If this stack is useful to
+you, the credit belongs to those two projects.
 
 ## License
 
+This repository holds configuration and one small proxy. It is licensed under
 [MIT No Attribution](LICENSE) (SPDX: `MIT-0`) — copy, adapt and reuse without
 attribution.
+
+It contains **no** wingman or wingman-agent source code. The platform is pulled
+as the published `ghcr.io/adrianliechti/wingman-platform` image and the CLI is
+installed separately, so both remain under their own MIT license and notices,
+which the table above links. MIT-0 applies only to the files in this
+repository.
