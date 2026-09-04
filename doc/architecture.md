@@ -26,11 +26,12 @@ is configuration around it.
                                         │ responses ⇄ chat         │
                                         └────────────┬─────────────┘
                                                      │ /v1/chat/completions
-                                                     ▼
-                                        ┌──────────────────────────┐
-                                        │ effort-guard             │  (Docker)
-                                        │ clamps reasoning_effort  │  optional
-                                        └────────────┬─────────────┘
+                                                     │
+                                        ┌ ─ ─ ─ ─ ─ ─┴─ ─ ─ ─ ─ ─ ─┐
+                                          effort-guard              │  (Docker)
+                                        │ clamps reasoning_effort      off by
+                                          make up-guard              │  default
+                                        └ ─ ─ ─ ─ ─ ─┬─ ─ ─ ─ ─ ─ ─┘
                                                      │ host.docker.internal:8888
                                                      ▼
                                         ┌──────────────────────────┐
@@ -43,9 +44,11 @@ The model server runs natively rather than in a container, and with the MLX
 backend it has to: Docker on macOS has no access to the Metal GPU. The
 containers reach it through `host.docker.internal`.
 
-`effort-guard` is specific to the Qwen3.8 chat template — see
-[qwen38-mlx.md](qwen38-mlx.md). For a backend that accepts the full range of
-reasoning efforts, point `LLM_URL` past it.
+By default the platform talks to the model server directly. `effort-guard` is
+an optional hop, started only by `make up-guard`; wingman-agent 0.16.1 clamps
+reasoning efforts client-side, which covers the normal setup. See
+[qwen38-mlx.md](qwen38-mlx.md#the-effort-guard) for when it still earns its
+place.
 
 ## Reaching the host from a container
 
@@ -86,7 +89,7 @@ you when the two drift apart.
 | Port | Bound to | What |
 |---|---|---|
 | 4242 | `127.0.0.1` | wingman platform, the gateway the CLI talks to |
-| 8080 | container-internal | both the platform and the effort guard inside their containers |
+| 8080 | container-internal | the platform, and the effort guard when enabled |
 | 8888 | `127.0.0.1` | the native model server |
 
 4242 is also the port the wingman CLI falls back to when no backend variable is

@@ -9,50 +9,24 @@ name: wingman-stack
 # reach it through host.docker.internal.
 
 services:
-  # Rewrites reasoning_effort values that the Qwen3.8 chat template rejects with
-  # HTTP 500. See effort-guard/main.go for the exact mapping and why it is
-  # needed. Set LLM_URL in .env to bypass it.
-  effort-guard:
-    build:
-      context: ./effort-guard
-    image: wingman-stack/effort-guard:1
-    restart: unless-stopped
-
-    environment:
-      # Base URL of the native mlx-vlm server, without the /v1 suffix.
-      UPSTREAM_URL: ${LLM_UPSTREAM_URL:-http://host.docker.internal:8888}
-      LOG_REWRITES: ${LOG_REWRITES:-1}
-
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-
   platform:
     image: ghcr.io/adrianliechti/wingman-platform
     restart: unless-stopped
 
-    depends_on:
-      effort-guard:
-        condition: service_healthy
-
     # Loopback only. This gateway has no authentication configured, so it must
-    # not be reachable from the LAN. See "Adding authentication" in README.md.
+    # not be reachable from the LAN. See "Adding authentication" in
+    # doc/configuration.md.
     ports:
       - "127.0.0.1:${WINGMAN_PORT:-4242}:8080"
 
     environment:
-      # Consumed by config/platform.yaml through ${...} expansion.
-      LLM_URL: ${LLM_URL:-http://effort-guard:8080/v1}
+      # Consumed by config/platform.yaml through ${...} expansion. Points
+      # straight at the model server; set LLM_URL to http://effort-guard:8080/v1
+      # to route through the optional guard below.
+      LLM_URL: ${LLM_URL:-${LLM_UPSTREAM_URL:-http://host.docker.internal:8888}/v1}
       LLM_MODEL: ${LLM_MODEL:-Qwen3.8-27B-local}
       LLM_TOKEN: ${LLM_TOKEN:-sk-local}
 
-    # Only used when LLM_URL is overridden to bypass the effort guard.
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -65,3 +39,37 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # Optional backstop that clamps reasoning_effort values the Qwen3.8 chat
+  # template rejects with HTTP 500.
+  #
+  # Not started by default. wingman-agent 0.16.1 clamps these client-side from
+  # its model catalog, which covers the normal setup. Enable the guard when the
+  # CLI is older, when the model name is one the catalog does not recognise, or
+  # for any other client that talks to this gateway directly:
+  #
+  #   make up-guard
+  #
+  # See doc/qwen38-mlx.md for the exact mapping and the evidence behind it.
+  effort-guard:
+    profiles: ["guard"]
+
+    build:
+      context: ./effort-guard
+    image: wingman-stack/effort-guard:1
+    restart: unless-stopped
+
+    environment:
+      # Base URL of the native model server, without the /v1 suffix.
+      UPSTREAM_URL: ${LLM_UPSTREAM_URL:-http://host.docker.internal:8888}
+      LOG_REWRITES: ${LOG_REWRITES:-1}
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

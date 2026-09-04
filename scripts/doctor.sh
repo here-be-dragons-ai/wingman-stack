@@ -73,16 +73,23 @@ if ! docker info >/dev/null 2>&1; then
 else
   pass "Docker daemon is running"
 
-  running=$(docker compose ps --services --filter status=running 2>/dev/null)
+  running=$(docker compose --profile guard ps --services --filter status=running 2>/dev/null)
 
-  for service in effort-guard platform; do
-    if printf '%s' "$running" | grep -qx "$service"; then
-      pass "$service is running"
-    else
-      fail "$service is not running"
-      note "start it with: make up"
-    fi
-  done
+  if printf '%s' "$running" | grep -qx "platform"; then
+    pass "platform is running"
+  else
+    fail "platform is not running"
+    note "start it with: make up"
+  fi
+
+  # The guard is optional since wingman-agent 0.16.1 clamps efforts itself.
+  if printf '%s' "$running" | grep -qx "effort-guard"; then
+    guard_running=1
+    pass "effort-guard is running (optional backstop)"
+  else
+    pass "effort-guard is not running (optional; the CLI clamps efforts itself)"
+    note "enable it with: make up-guard"
+  fi
 fi
 
 # ── 3. Gateway API ────────────────────────────────────────────────────────────
@@ -140,32 +147,46 @@ fi
 
 # ── 5. Effort guard ───────────────────────────────────────────────────────────
 
-section "5. Effort guard"
+section "5. Reasoning effort"
 
-guarded=$(curl -sS -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' \
+# Qwen3.8's chat template accepts none, low, medium and xhigh only. Who enforces
+# that depends on the setup: with the guard in the path it is enforced here,
+# otherwise the CLI clamps client-side from its model catalog (0.16.1+).
+
+supported=$(curl -sS -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' \
+  -X POST "$GATEWAY_URL/v1/responses" \
+  -H 'Content-Type: application/json' \
+  -d "{\"model\":\"$GATEWAY_MODEL\",\"max_output_tokens\":16,\"reasoning\":{\"effort\":\"xhigh\"},\"input\":\"Reply with the word ready.\"}" 2>&1)
+
+if [ "$supported" = "200" ]; then
+  pass "a supported effort ('xhigh') is accepted"
+else
+  fail "a supported effort ('xhigh') returned HTTP $supported"
+  note "$(printf '%s' "$supported" | cut -c1-200)"
+fi
+
+unsupported=$(curl -sS -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' \
   -X POST "$GATEWAY_URL/v1/responses" \
   -H 'Content-Type: application/json' \
   -d "{\"model\":\"$GATEWAY_MODEL\",\"max_output_tokens\":16,\"reasoning\":{\"effort\":\"high\"},\"input\":\"Reply with the word ready.\"}" 2>&1)
 
-if [ "$guarded" = "200" ]; then
-  pass "effort 'high' is accepted (clamped to medium on the way upstream)"
+if [ "${guard_running:-0}" = "1" ]; then
+  if [ "$unsupported" = "200" ]; then
+    pass "the guard clamps 'high' (accepted, sent upstream as medium)"
+  else
+    fail "with the guard running, 'high' returned HTTP $unsupported"
+    note "check that LLM_URL points at the guard: docker compose logs effort-guard"
+  fi
 else
-  fail "effort 'high' returned HTTP $guarded"
-  note "the Qwen3.8 chat template only accepts xhigh, medium and low"
-  note "check that LLM_URL still points at the guard: docker compose logs effort-guard"
-fi
-
-direct=$(curl -sS -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' \
-  -X POST "$MODEL_URL/v1/chat/completions" \
-  -H 'Content-Type: application/json' \
-  -d "{\"model\":\"$MODEL_ALIAS\",\"max_completion_tokens\":16,\"reasoning_effort\":\"high\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" 2>&1)
-
-if [ "$direct" = "200" ]; then
-  warn "the model server accepts 'high' directly (HTTP 200)"
-  note "the chat template of this build apparently allows it; the guard is"
-  note "then redundant but harmless. You can bypass it via LLM_URL in .env."
-else
-  pass "bypassing the guard reproduces HTTP $direct, so the guard is doing work"
+  if [ "$unsupported" = "200" ]; then
+    warn "'high' was accepted upstream without the guard"
+    note "this model build apparently tolerates it; nothing to do"
+  else
+    pass "'high' returns HTTP $unsupported straight through, as expected"
+    note "unsupported efforts are the client's job here: wingman-cli 0.16.1+"
+    note "clamps them from its catalog, which is why the guard is off by default."
+    note "Older CLI or an unrecognised model name? Run: make up-guard"
+  fi
 fi
 
 # ── 6. CLI ────────────────────────────────────────────────────────────────────
@@ -189,9 +210,23 @@ else
 
   case "${WINGMAN_EFFORT:-}" in
     low | medium | xhigh | none) pass "WINGMAN_EFFORT='$WINGMAN_EFFORT' is supported by the template" ;;
-    "") warn "WINGMAN_EFFORT is unset, so the CLI will resolve 'high'" ;;
-    *) warn "WINGMAN_EFFORT='$WINGMAN_EFFORT' is not accepted upstream; the guard will rewrite it" ;;
+    "") warn "WINGMAN_EFFORT is unset; the CLI resolves 'high' and clamps it to medium" ;;
+    *) warn "WINGMAN_EFFORT='$WINGMAN_EFFORT' is not accepted upstream; it will be clamped" ;;
   esac
+
+  # The one setting the model catalog cannot supply. Getting it wrong does not
+  # fail a request -- it kills the model server later in the session.
+  if [ -z "${WINGMAN_CONTEXT_WINDOW:-}" ]; then
+    fail "WINGMAN_CONTEXT_WINDOW is not set"
+    note "the CLI would compact against the catalog's 262144, which no profile"
+    note "on this machine can deliver: expect [METAL] Insufficient Memory."
+    note "source scripts/wingman-env.sh, or upgrade to wingman-cli 0.16.1+"
+  elif [ "$WINGMAN_CONTEXT_WINDOW" -gt 0 ] 2>/dev/null; then
+    pass "WINGMAN_CONTEXT_WINDOW=$WINGMAN_CONTEXT_WINDOW"
+  else
+    fail "WINGMAN_CONTEXT_WINDOW='$WINGMAN_CONTEXT_WINDOW' is not a positive number"
+    note "a value the CLI cannot parse is ignored, falling back to the catalog"
+  fi
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────

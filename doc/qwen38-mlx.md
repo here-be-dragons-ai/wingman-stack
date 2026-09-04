@@ -4,11 +4,14 @@ The reference backend of this stack: Qwen3.8-27B (MLX 4bit) served by `mlx-vlm`
 on Apple Silicon, set up by
 [mlx-qwen38-apple-silicon](https://github.com/here-be-dragons-ai/mlx-qwen38-apple-silicon).
 
-Two properties of this model and this harness will bite you. Both are
-model-specific — they do not apply to a hosted backend — and neither is fixable
-from the CLI.
+This model constrains two things the agent would otherwise get wrong. Both are
+handled as of **wingman-cli 0.16.1**, one of them only if you configure it. This
+page records what the constraints are, so the configuration is not cargo cult.
 
-## 1. `reasoning_effort` — handled, by the effort guard
+> Requires wingman-cli 0.16.1 or newer. On 0.16.0 and earlier neither fix
+> exists: pin the efforts by hand and run the stack with `make up-guard`.
+
+## 1. `reasoning_effort` — fixed in the CLI
 
 Qwen3.8's `chat_template.jinja` accepts exactly three values while thinking is
 on, and raises otherwise:
@@ -26,88 +29,110 @@ on, and raises otherwise:
 `enable_thinking=false`, which skips the branch entirely
 (`mlx_vlm/server/request_normalization.py`).
 
-Now the harness side. wingman-agent resolves its main chat loop to `high`
-whenever no effort is pinned:
-
-```go
-// pkg/code/agent/agent.go, effortFor()
-if requested == "" {
-    if role == modelRolePlan && model.ClassOf(current) == model.ClassLarge {
-        requested = "xhigh"
-    } else {
-        requested = "high"
-    }
-}
-return clampEffortForModel(requested, m)
-```
-
-`clampEffortForModel` clamps against a per-model `Efforts` list from the
-compiled-in catalog, which is empty for this model — so nothing clamps on the
-client side. Wingman then forwards the value verbatim
+The problem was that the agent resolves its main chat loop to `high` whenever no
+effort is pinned (`effortFor` in `pkg/code/agent/agent.go`), while its clamping
+is driven by a per-model `Efforts` list that was empty for this model — so
+nothing clamped, and wingman forwards the value verbatim
 (`normalizedReasoningEffort` in `pkg/provider/openai/util.go`).
 
-Two layers deal with it:
+0.16.1 closes it in the model catalog:
 
-- `scripts/wingman-env.sh` pins `WINGMAN_EFFORT=low` and
-  `WINGMAN_EFFORT_PLAN=xhigh`. That covers the main chat loop and plan mode.
-- `effort-guard` clamps whatever still gets through, rounding **down** so a
-  request never gets more reasoning than it asked for:
+```go
+var qwen38Efforts = []string{"none", "low", "medium", "xhigh"}
+```
 
-  | in | out |
-  |---|---|
-  | `high` | `medium` |
-  | `max` | `xhigh` |
-  | `minimal` | `low` |
-  | `low`, `medium`, `xhigh` | unchanged |
-  | `none`, `off`, `disabled`, `false`, `0` | unchanged (disables thinking) |
-  | anything else | field dropped, template default applies |
+With `effortValues = [auto, none, low, medium, high, xhigh, max]`,
+`clampEffortForModel` now rounds down to the nearest supported level:
+`high → medium`, `max → xhigh`. Nothing to configure — but it only works when
+the model name resolves to that catalog entry, which is why
+`scripts/wingman-env.sh` uses `qwen3.8-27b` rather than a private alias. See
+[architecture.md](architecture.md#the-model-name-chain).
 
-The guard is not redundant with the env vars, because they cannot cover
-everything: there is no environment variable for the utility role, and subagent
-efforts are chosen by the model at runtime and can be `high` or `max`.
+### The effort guard
 
-`make test` runs its unit tests. To bypass it for a backend that accepts the
-full range, set `LLM_URL` in `.env` to point straight at the model server.
+`effort-guard` did this clamping in the gateway before the CLI could. It is
+still in the repository but **off by default**, because it now duplicates work
+the client already does. Enable it with `make up-guard` when:
 
-## 2. Context window — not handled, plan around it
+- the CLI is older than 0.16.1,
+- the model is exposed under a name the catalog does not recognise, so there is
+  no `Efforts` list to clamp against, or
+- something other than wingman-agent talks to the gateway.
 
-The CLI believes this model has **262,144 tokens** of context, because that is
-what its catalog says. A 48 GB machine cannot deliver that:
+It applies the same mapping, rounding down so a request never gets more
+reasoning than it asked for:
 
-| profile | `context_length` | with `KV_BITS=8` |
+| in | out |
+|---|---|
+| `high` | `medium` |
+| `max` | `xhigh` |
+| `minimal` | `low` |
+| `low`, `medium`, `xhigh` | unchanged |
+| `none`, `off`, `disabled`, `false`, `0` | unchanged (disables thinking) |
+| anything else | field dropped, template default applies |
+
+`make test` runs its unit tests.
+
+## 2. Context window — you must set it
+
+The model catalog says this model has **262,144 tokens** of context. That is
+true of Qwen3.8 in general and false of any machine running it locally in 4-bit
+with a finite KV cache. The CLI compacts against whatever number it believes, so
+believing the catalog means never compacting in time.
+
+This is not theoretical. It is what a real session did on an M5 Pro / 48 GB:
+
+```
+13:29:47 ERROR [METAL] Command buffer execution failed: Insufficient Memory
+         mem active=32.62 cache=0.62 sum=33.25 GiB (83% of 40.00 GiB working set)
+         peak=40.69 GiB
+13:30:14 Shutting down
+```
+
+The agent kept growing the prompt because nothing told it not to, peak crossed
+the 40 GiB working set, and the model server died mid-session.
+
+0.16.1 adds the override:
+
+```sh
+export WINGMAN_CONTEXT_WINDOW=131072
+```
+
+It takes precedence over the catalog (`ContextWindowFor` in
+`pkg/agent/config.go`), and `scripts/wingman-env.sh` exports it. Match it to the
+profile you start the server with:
+
+| profile | plain | with `KV_BITS=8` |
 |---|---|---|
 | `lean` | 32,768 | 65,536 |
 | `balanced` | 49,152 | 98,304 |
 | `roomy` (48 GB) | 65,536 | 131,072 |
 
-There is no way to tell the CLI otherwise. `ContextWindowFor`
-(`pkg/agent/config.go`) reads the compiled-in catalog and falls back to 400,000
-for unknown ids; neither an environment variable nor `~/.wingman/config.json`
-overrides it. So the agent will not compact in time on long sessions, and the
-model server eventually dies with `[METAL] Insufficient Memory`.
+The start banner prints a computed `CONTEXT BUDGET` for the running machine —
+on `roomy` with `KV_BITS=8` it reports about 241,000 tokens. Treat that as the
+upper bound it says it is, not a target: the profile's own recommendation is
+65,536, and 131,072 sits deliberately between the two. The `mem` lines in the
+server log are the authoritative signal.
 
-What to do instead:
+Two habits still pay off, because a context limit reached cleanly is better than
+one reached at all:
 
-- Keep `KV_BITS=8` (the default in `.env.example`). It halves the KV cache from
-  64 to 32 KiB per token and roughly doubles the usable context, for a modest
-  quality cost.
 - Run `make watchdog` in a third terminal. It restarts the server before memory
   fills up, and the SSD prefix cache makes the restart cheap — a 36k prompt
   measured 89,630 ms cold against 350 ms after a restart.
-- Compact early rather than at the limit, and start a fresh session for a new
-  task instead of carrying one conversation all day.
+- Start a fresh session per task instead of carrying one conversation all day.
 
 ## Measured performance
 
-From the server log of a real first agent turn on an M5 Pro / 48 GB, `roomy`,
+From the server log of real first agent turns on an M5 Pro / 48 GB, `roomy`,
 speculative decoding on:
 
 | | |
 |---|---|
 | Agent prompt (system + tool definitions) | ~9,900 tokens |
-| Cold prefill | 21.6 s at 458 tok/s |
+| Cold prefill | 21 s at 460–490 tok/s |
 | Follow-up turn after a tool call | 0.67 s at 14,910 tok/s (`cached_tokens=9885`) |
-| Decode | 30–36 tok/s |
+| Decode | 25–36 tok/s |
 
 So the first turn of a session costs about 20 seconds and every turn after it is
 effectively instant on the prompt side. That prefix cache is a precondition for
