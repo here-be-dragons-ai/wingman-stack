@@ -44,13 +44,28 @@ unset CLAUDE_CODE_CHILD_SESSION
 
 # ── Report ────────────────────────────────────────────────────────────────────
 
-if ! command -v claude >/dev/null 2>&1 &&
-   [ ! -x "$HOME/.local/bin/claude" ] &&
-   [ ! -x "$HOME/.claude/local/claude" ]; then
+# Resolve the binary to a path and use that path. The native installer does not
+# always put claude on PATH, so the two fallback locations below are real -- but
+# running a bare `claude` after finding it at one of them fails, and with stderr
+# discarded that surfaced as "not logged in" for a perfectly good subscription.
+# WINGMAN_CLAUDE_PATH wins, because it is what the CLI itself will use.
+_claude_bin=''
+
+if [ -n "${WINGMAN_CLAUDE_PATH:-}" ] && [ -x "${WINGMAN_CLAUDE_PATH}" ]; then
+  _claude_bin="$WINGMAN_CLAUDE_PATH"
+elif command -v claude >/dev/null 2>&1; then
+  _claude_bin=$(command -v claude)
+elif [ -x "$HOME/.local/bin/claude" ]; then
+  _claude_bin="$HOME/.local/bin/claude"
+elif [ -x "$HOME/.claude/local/claude" ]; then
+  _claude_bin="$HOME/.claude/local/claude"
+fi
+
+if [ -z "$_claude_bin" ]; then
   echo "claude: not found on PATH, in ~/.local/bin or ~/.claude/local" >&2
   echo "  install Claude Code, or set WINGMAN_CLAUDE_PATH to its binary" >&2
 else
-  _claude_status=$(claude auth status 2>/dev/null)
+  _claude_status=$("$_claude_bin" auth status 2>/dev/null)
 
   case "$_claude_status" in
     *'"loggedIn": true'*)
@@ -67,9 +82,11 @@ else
       esac
       ;;
     *)
-      echo "claude: not logged in -- run: claude auth login" >&2
+      echo "claude: not logged in -- run: $_claude_bin auth login" >&2
       ;;
   esac
 
   unset _claude_status _claude_sub
 fi
+
+unset _claude_bin
