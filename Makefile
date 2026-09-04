@@ -17,12 +17,12 @@ DOTENV := set -a; [ -f "$(REPO_DIR)/.env" ] && . "$(REPO_DIR)/.env"; set +a
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up up-guard down restart logs ps build test doctor model watchdog agent
+.PHONY: help up up-guard down restart logs ps build test doctor model watchdog agent agent-claude
 
 help: ## Show this help
 	@echo "Gateway:"
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-10s\033[0m %s\n", $$1, $$2}'
+	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}'
 	@echo
 	@echo "Order of operations:  make model   (terminal 1, keeps running)"
 	@echo "                      make up      (terminal 2)"
@@ -74,3 +74,9 @@ agent: ## Run the wingman CLI against the gateway in the current directory
 	  echo "wingman not on PATH -- brew install adrianliechti/tap/wingman-cli"; \
 	  exit 1; }
 	@$(DOTENV); . "$(REPO_DIR)/scripts/wingman-env.sh"; wingman
+
+agent-claude: ## Run the wingman CLI against your Claude subscription (no gateway)
+	@command -v wingman >/dev/null || { \
+	  echo "wingman not on PATH -- brew install adrianliechti/tap/wingman-cli"; \
+	  exit 1; }
+	@. "$(REPO_DIR)/scripts/claude-subscription-env.sh"; wingman --agent claude

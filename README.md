@@ -78,6 +78,20 @@ wingman server                                # web UI, same backend
 The `</dev/null` is not decorative — see
 [doc/troubleshooting.md](doc/troubleshooting.md#wingman-exec-and-stdin).
 
+### Or use your Claude subscription
+
+The same CLI can drive the native Claude Code CLI and use its login, which
+bypasses the gateway entirely — handy for picking per task whether the work runs
+on hardware you control or on a frontier model:
+
+```sh
+source /path/to/wingman-stack/scripts/claude-subscription-env.sh
+wingman --agent claude
+```
+
+See [doc/claude-subscription.md](doc/claude-subscription.md); the script exists
+because leftover `ANTHROPIC_*` variables silently redirect that mode.
+
 ## What is in here
 
 | | |
@@ -87,7 +101,8 @@ The `</dev/null` is not decorative — see
 | `client.yaml` | the gateway↔model-server contract, cross-checked by the MLX start script |
 | `effort-guard/` | an optional proxy that keeps reasoning efforts inside what the backend accepts (`make up-guard`) |
 | `scripts/doctor.sh` | end-to-end verification |
-| `scripts/wingman-env.sh` | the CLI environment, source it |
+| `scripts/wingman-env.sh` | the CLI environment for the gateway, source it |
+| `scripts/claude-subscription-env.sh` | the CLI environment for Claude subscription mode, source it |
 | `Makefile` | `make help` lists every target |
 
 ## Documentation
@@ -97,6 +112,7 @@ The `</dev/null` is not decorative — see
 | [doc/architecture.md](doc/architecture.md) | how the pieces fit, why the gateway is needed, the model name chain, ports |
 | [doc/configuration.md](doc/configuration.md) | every file and variable, how to point the stack at another backend, authentication |
 | [doc/qwen38-mlx.md](doc/qwen38-mlx.md) | the Qwen3.8/MLX backend: the two constraints it imposes, how each is handled, measured performance |
+| [doc/claude-subscription.md](doc/claude-subscription.md) | driving the native Claude Code CLI on a Pro/Max/Team subscription instead |
 | [doc/troubleshooting.md](doc/troubleshooting.md) | symptoms and their causes, useful commands |
 
 ## Credits
