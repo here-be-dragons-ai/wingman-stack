@@ -102,3 +102,8 @@ The actual work is upstream:
 [wingman](https://github.com/adrianliechti/wingman) and
 [wingman-agent](https://github.com/adrianliechti/wingman-agent) by
 [Adrian Liechti](https://github.com/adrianliechti).
+
+## License
+
+[MIT No Attribution](LICENSE) (SPDX: `MIT-0`) — copy, adapt and reuse without
+attribution.
