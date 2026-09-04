@@ -1,7 +1,7 @@
 # The contract between this gateway and the mlx-vlm server, in the shape that
 # start-mlx_qwen3.8.sh can cross-check:
 #
-#   CLIENT_CONFIG=~/src/wingman/client.yaml ~/src/m532/start-mlx_qwen3.8.sh
+#   CLIENT_CONFIG=/path/to/wingman-stack/client.yaml ./start-mlx_qwen3.8.sh
 #
 # The start script then warns when model.default does not match its
 # MODEL_ALIAS, or when model.context_length exceeds the memory budget it

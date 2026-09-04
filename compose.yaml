@@ -1,11 +1,12 @@
-name: wingman-local
+name: wingman-stack
 
-# Wingman platform as a local gateway in front of an mlx-vlm Qwen3.8-27B server.
+# The wingman platform as a gateway in front of a model backend. Defaults to the
+# reference backend: an mlx-vlm Qwen3.8-27B server on the host.
 #
-# The model server itself is NOT in this compose file, and cannot be: Docker on
-# macOS has no access to the Metal GPU, so Qwen has to run natively on the host
-# (see ../m532/start-mlx_qwen3.8.sh). The containers reach it through
-# host.docker.internal.
+# The model server itself is NOT in this compose file, and with the MLX backend
+# it cannot be: Docker on macOS has no access to the Metal GPU, so Qwen runs
+# natively on the host (see the mlx-qwen38-apple-silicon repo). The containers
+# reach it through host.docker.internal.
 
 services:
   # Rewrites reasoning_effort values that the Qwen3.8 chat template rejects with
@@ -14,7 +15,7 @@ services:
   effort-guard:
     build:
       context: ./effort-guard
-    image: wingman-local/effort-guard:1
+    image: wingman-stack/effort-guard:1
     restart: unless-stopped
 
     environment:

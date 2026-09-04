@@ -1,7 +1,9 @@
 SHELL := /bin/bash
 
-# Where the Qwen3.8-27B start scripts live. Override with MLX_REPO=...
-MLX_REPO  ?= $(HOME)/src/m532
+# Where the Qwen3.8-27B start scripts live. Only used by `make model` and
+# `make watchdog`. Override per call with `make model MLX_REPO=/path`, or set it
+# once with `export MLX_REPO=...` in your shell profile.
+MLX_REPO  ?= $(HOME)/src/mlx-qwen38-apple-silicon
 REPO_DIR  := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 START_SH  := $(MLX_REPO)/start-mlx_qwen3.8.sh
 WATCHDOG  := $(MLX_REPO)/watchdog-mlx_qwen3.8.sh
