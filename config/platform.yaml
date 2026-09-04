@@ -1,0 +1,34 @@
+# Wingman platform configuration.
+#
+# Wingman expands ${...} from the container environment before parsing this
+# file; the values are set in compose.yaml (defaults) and .env (overrides):
+#
+#   LLM_URL    OpenAI-compatible base URL of the upstream, including /v1
+#   LLM_MODEL  model id the upstream expects (the mlx-vlm alias)
+#   LLM_TOKEN  bearer token sent upstream; mlx-vlm ignores it
+
+providers:
+  # "openai-compatible" is the generic OpenAI dialect. The dedicated "llama"
+  # and "ollama" types only differ in how they default and normalize the URL.
+  - type: openai-compatible
+    url: ${LLM_URL}
+    token: ${LLM_TOKEN}
+
+    models:
+      # Key = the model name wingman exposes, i.e. what the CLI asks for.
+      # "qwen3.8-27b" is a registered alias in the wingman-agent model catalog,
+      # so the CLI resolves real metadata (class medium, 64k output) instead of
+      # falling back to its 400k default for unknown ids.
+      #
+      # id = the model name the upstream expects. With mlx-vlm the request
+      # model name IS the load path, so this must match MODEL_ALIAS of
+      # start-mlx_qwen3.8.sh exactly -- on a mismatch the server drops the
+      # loaded model and starts a HuggingFace download, surfacing as HTTP 401.
+      qwen3.8-27b:
+        id: ${LLM_MODEL}
+        name: Qwen3.8-27B (local, MLX 4bit)
+        description: Local Qwen3.8-27B served by mlx-vlm on Apple Silicon
+
+# No authorizers block means the gateway accepts unauthenticated requests,
+# which is why compose.yaml publishes it on 127.0.0.1 only. To require a token
+# instead, see "Adding authentication" in README.md.

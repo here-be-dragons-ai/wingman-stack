@@ -1,0 +1,38 @@
+# The contract between this gateway and the mlx-vlm server, in the shape that
+# start-mlx_qwen3.8.sh can cross-check:
+#
+#   CLIENT_CONFIG=~/src/wingman/client.yaml ~/src/m532/start-mlx_qwen3.8.sh
+#
+# The start script then warns when model.default does not match its
+# MODEL_ALIAS, or when model.context_length exceeds the memory budget it
+# computed for this machine. `make model` passes the variable for you.
+#
+# Note this describes the UPSTREAM view: model.default is the id mlx-vlm
+# expects, not the name the CLI asks wingman for. See config/platform.yaml for
+# the mapping between the two.
+
+model:
+  default: Qwen3.8-27B-local
+  base_url: http://localhost:8888/v1
+  api_key: sk-local
+
+  # Keep in sync with the profile in .env:
+  #   lean 32768 · balanced 49152 · roomy 65536, doubled when KV_BITS=8.
+  # The start banner prints the authoritative budget for the running machine.
+  context_length: 131072
+
+  # What the client reserves for one response. Not maximised on purpose: many
+  # clients compact at (context_length - max_tokens) * threshold, so a larger
+  # value moves the trigger down and wastes context.
+  max_tokens: 16384
+
+  extra_body:
+    enable_thinking: true
+
+    # xhigh | medium | low, or none/off to disable thinking. Anything else is
+    # rejected by the Qwen3.8 chat template; the effort guard clamps the values
+    # wingman-agent sends into this set.
+    reasoning_effort: low
+
+compression:
+  threshold: 0.85

@@ -1,0 +1,66 @@
+name: wingman-local
+
+# Wingman platform as a local gateway in front of an mlx-vlm Qwen3.8-27B server.
+#
+# The model server itself is NOT in this compose file, and cannot be: Docker on
+# macOS has no access to the Metal GPU, so Qwen has to run natively on the host
+# (see ../m532/start-mlx_qwen3.8.sh). The containers reach it through
+# host.docker.internal.
+
+services:
+  # Rewrites reasoning_effort values that the Qwen3.8 chat template rejects with
+  # HTTP 500. See effort-guard/main.go for the exact mapping and why it is
+  # needed. Set LLM_URL in .env to bypass it.
+  effort-guard:
+    build:
+      context: ./effort-guard
+    image: wingman-local/effort-guard:1
+    restart: unless-stopped
+
+    environment:
+      # Base URL of the native mlx-vlm server, without the /v1 suffix.
+      UPSTREAM_URL: ${LLM_UPSTREAM_URL:-http://host.docker.internal:8888}
+      LOG_REWRITES: ${LOG_REWRITES:-1}
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  platform:
+    image: ghcr.io/adrianliechti/wingman-platform
+    restart: unless-stopped
+
+    depends_on:
+      effort-guard:
+        condition: service_healthy
+
+    # Loopback only. This gateway has no authentication configured, so it must
+    # not be reachable from the LAN. See "Adding authentication" in README.md.
+    ports:
+      - "127.0.0.1:${WINGMAN_PORT:-4242}:8080"
+
+    environment:
+      # Consumed by config/platform.yaml through ${...} expansion.
+      LLM_URL: ${LLM_URL:-http://effort-guard:8080/v1}
+      LLM_MODEL: ${LLM_MODEL:-Qwen3.8-27B-local}
+      LLM_TOKEN: ${LLM_TOKEN:-sk-local}
+
+    # Only used when LLM_URL is overridden to bypass the effort guard.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - ./config/platform.yaml:/config.yaml:ro
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/v1/models"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
