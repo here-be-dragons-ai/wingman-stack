@@ -235,7 +235,8 @@ is rarely what you want — source the file in your project shell instead.
 | `404` on `/v1/responses` | the CLI is talking to `mlx-vlm` directly instead of the gateway; check `WINGMAN_URL` |
 | `[METAL] Insufficient Memory` | context over budget — see *Two things that will bite you*, part 2 |
 | The CLI picks a wrong or absent model | `curl localhost:4242/v1/models`; the name must match `WINGMAN_MODEL` |
-| Answers stall for minutes on the first turn | cold prefill; 2–3 minutes for 30k tokens is normal, subsequent turns hit the prefix cache |
+| Answers stall for minutes on the first turn | cold prefill; ~22 s for a 10k agent prompt, and the next turn hits the prefix cache at 15,000 tok/s |
+| `wingman exec` hangs with no output at all | it is reading stdin as context. In a script or a non-interactive shell, redirect it: `wingman exec "…" < /dev/null` |
 
 **On reaching the host from a container.** `start-mlx_qwen3.8.sh` binds
 `127.0.0.1` on purpose. That is fine: Docker Desktop proxies
