@@ -162,24 +162,41 @@ section "5. Reasoning effort"
 
 probe_code=''
 probe_error=''
+probe_body=''
 
 # probe_effort EFFORT -- sets $probe_code to the HTTP status of a /v1/responses
-# call at that effort, and $probe_error to whatever curl itself complained
-# about. The two must stay on separate streams: merged, an unreachable gateway
-# produces a string that matches no status we test for, and the "not 200" branch
-# below would report a dead gateway as an expected rejection.
+# call at that effort, $probe_body to the response payload, and $probe_error to
+# whatever curl itself complained about. The three must stay on separate
+# streams: merged, an unreachable gateway produces a string that matches no
+# status we test for, and the "not 200" branch below would report a dead
+# gateway as an expected rejection.
 probe_effort() {
-  local stderr
+  local stderr body
   stderr=$(mktemp)
+  body=$(mktemp)
 
-  probe_code=$(curl -sS -m "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' \
+  probe_code=$(curl -sS -m "$REQ_TIMEOUT" -o "$body" -w '%{http_code}' \
     -X POST "$GATEWAY_URL/v1/responses" \
     -H 'Content-Type: application/json' \
     -d "{\"model\":\"$GATEWAY_MODEL\",\"max_output_tokens\":16,\"reasoning\":{\"effort\":\"$1\"},\"input\":\"Reply with the word ready.\"}" \
     2>"$stderr")
 
   probe_error=$(tr -d '\n' < "$stderr" | cut -c1-200)
-  rm -f "$stderr"
+  probe_body=$(tr -d '\n' < "$body" | cut -c1-300)
+  rm -f "$stderr" "$body"
+}
+
+# rejected_the_effort BODY -- true when BODY is the chat template refusing the
+# effort rather than some unrelated failure at a similar status.
+#
+# The status code alone cannot carry this. A model server that is simply down
+# also produces a non-200 ("dial tcp ...: connection refused", HTTP 400 through
+# the gateway), and reading that as the expected rejection reports a broken
+# chain as a green check. The template raises "Unexpected reasoning effort ...";
+# matching the two words is enough, and cannot collide with a gateway that
+# echoes the request, since that renders as reasoning":{"effort.
+rejected_the_effort() {
+  printf '%s' "$1" | grep -qi 'reasoning effort'
 }
 
 # curl reports 000 when it never got a response at all.
@@ -193,12 +210,14 @@ elif [ "$probe_code" = "000" ]; then
 else
   fail "a supported effort ('xhigh') returned HTTP $probe_code"
 
+  if [ -n "$probe_body" ]; then note "$probe_body"; fi
   if [ -n "$probe_error" ]; then note "$probe_error"; fi
 fi
 
 probe_effort high
 unsupported="$probe_code"
 unsupported_error="$probe_error"
+unsupported_body="$probe_body"
 
 if [ "$unsupported" = "000" ]; then
   # No response at all says nothing about effort handling in either direction.
@@ -210,17 +229,23 @@ elif [ "${guard_running:-0}" = "1" ]; then
   else
     fail "with the guard running, 'high' returned HTTP $unsupported"
     note "check that LLM_URL points at the guard: docker compose logs effort-guard"
+    if [ -n "$unsupported_body" ]; then note "$unsupported_body"; fi
   fi
+elif [ "$unsupported" = "200" ]; then
+  warn "'high' was accepted upstream without the guard"
+  note "this model build apparently tolerates it; nothing to do"
+elif rejected_the_effort "$unsupported_body"; then
+  pass "'high' is rejected upstream (HTTP $unsupported), as expected"
+  note "unsupported efforts are the client's job here: wingman-cli 0.16.1+"
+  note "clamps them from its catalog, which is why the guard is off by default."
+  note "Another client on the gateway, or an unrecognised model name? It has"
+  note "no catalog to clamp against -- run: make up-guard"
 else
-  if [ "$unsupported" = "200" ]; then
-    warn "'high' was accepted upstream without the guard"
-    note "this model build apparently tolerates it; nothing to do"
-  else
-    pass "'high' returns HTTP $unsupported straight through, as expected"
-    note "unsupported efforts are the client's job here: wingman-cli 0.16.1+"
-    note "clamps them from its catalog, which is why the guard is off by default."
-    note "Older CLI or an unrecognised model name? Run: make up-guard"
-  fi
+  # Non-200, but not the template refusing the effort -- so this proves nothing
+  # about effort handling. Usually the same breakage section 4 just reported.
+  fail "'high' returned HTTP $unsupported, but not because the effort was rejected"
+  note "this says nothing about effort handling; fix the hop above first"
+  if [ -n "$unsupported_body" ]; then note "$unsupported_body"; fi
 fi
 
 # ── 6. CLI ────────────────────────────────────────────────────────────────────
