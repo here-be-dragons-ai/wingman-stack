@@ -12,16 +12,28 @@
 //	    {%- if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}
 //	        {{- raise_exception('Unexpected reasoning effort ...') }}
 //
-// wingman-agent resolves its main chat loop to "high" whenever no effort is
-// pinned (pkg/code/agent/agent.go: effortFor), and lets the model request
-// "high" or "max" per subagent. Its clamping is driven by a per-model Efforts
-// list in a compiled-in catalog, which is empty for this model, so nothing
-// clamps on the client side. Wingman then forwards the value verbatim
+// This proxy is OFF BY DEFAULT and is not part of the normal setup. It used to
+// be: wingman-agent resolves its main chat loop to "high" whenever no effort is
+// pinned (pkg/code/agent/agent.go: effortFor), its clamping is driven by a
+// per-model Efforts list in a compiled-in catalog, and that list was empty for
+// this model -- so nothing clamped and wingman forwarded the value verbatim
 // (pkg/provider/openai/util.go: normalizedReasoningEffort).
 //
-// Pinning WINGMAN_EFFORT and WINGMAN_EFFORT_PLAN covers the common paths; this
-// proxy closes the rest so a request can never fail on a value that only names
-// an effort level.
+// wingman-cli 0.16.1 fills the list in (none/low/medium/xhigh), so
+// clampEffortForModel now rounds high down to medium and max to xhigh before a
+// request ever leaves the CLI. Start the guard with `make up-guard` for the two
+// paths that clamping does not reach:
+//
+//   - a client other than wingman-agent talks to the gateway, which has no
+//     model catalog to clamp against -- the main reason this still exists;
+//   - the model is exposed under a name the catalog does not recognise, so
+//     there is no Efforts list to clamp against.
+//
+// Note the catalog clamping only binds wingman-agent. It is not a reason to run
+// an older CLI: 0.16.1 is required anyway for WINGMAN_CONTEXT_WINDOW, without
+// which a session ends in [METAL] Insufficient Memory rather than HTTP 500.
+//
+// See doc/qwen38-mlx.md for the evidence behind the mapping below.
 package main
 
 import (
@@ -156,6 +168,13 @@ func clampEffort(next http.Handler, verbose bool) http.Handler {
 // rewriteBody clamps reasoning_effort (chat completions dialect) and
 // reasoning.effort (responses dialect). changed=false means the caller should
 // forward the original body, so a well-formed request is never re-encoded.
+//
+// Which of the two ever arrives depends on where the guard sits. In this stack
+// it runs between the platform and the model server, where wingman has already
+// translated responses into chat completions, so only the flat field is seen --
+// including for the third-party clients this guard mainly exists for, since
+// their requests are translated the same way. The nested field covers a
+// deployment that puts the guard in front of the platform instead.
 func rewriteBody(body []byte) (out []byte, from, to string, changed bool) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 
