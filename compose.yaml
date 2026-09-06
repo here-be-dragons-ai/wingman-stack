@@ -44,9 +44,10 @@ services:
   # template rejects with HTTP 500.
   #
   # Not started by default. wingman-agent 0.16.1 clamps these client-side from
-  # its model catalog, which covers the normal setup. Enable the guard when the
-  # CLI is older, when the model name is one the catalog does not recognise, or
-  # for any other client that talks to this gateway directly:
+  # its model catalog, which covers the normal setup. That clamping only binds
+  # wingman-agent, so enable the guard when another client talks to this gateway
+  # -- it has no catalog -- or when the model is exposed under a name the
+  # catalog does not recognise:
   #
   #   make up-guard
   #

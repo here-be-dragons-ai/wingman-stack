@@ -11,7 +11,7 @@ leaving you with a generic connection error.
 |---|---|
 | `effort-guard: upstream unreachable` | model server not running, or not reachable at `LLM_UPSTREAM_URL` |
 | HTTP 401, or a HuggingFace download starts | `LLM_MODEL` ≠ `MODEL_ALIAS`, see [architecture.md](architecture.md#the-model-name-chain) |
-| HTTP 500 / 502 on every request | an effort the chat template rejects. Upgrade to wingman-cli 0.16.1+, check `WINGMAN_MODEL` is a name the catalog knows, or run `make up-guard` |
+| HTTP 500 / 502 on every request | an effort the chat template rejects. Upgrade to wingman-cli 0.16.1+ and check `WINGMAN_MODEL` is a name the catalog knows. If the caller is not wingman-agent it has no catalog to clamp against: run `make up-guard` |
 | `404` on `/v1/responses` | the CLI is talking to the model server directly instead of the gateway; check `WINGMAN_URL` |
 | `[METAL] Insufficient Memory`, server dies mid-session | `WINGMAN_CONTEXT_WINDOW` unset or too high for the running profile, see [qwen38-mlx.md](qwen38-mlx.md#2-context-window--you-must-set-it) |
 | The CLI picks a wrong or absent model | `curl localhost:4242/v1/models`; the name must match `WINGMAN_MODEL` |

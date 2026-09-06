@@ -9,7 +9,9 @@ handled as of **wingman-cli 0.16.1**, one of them only if you configure it. This
 page records what the constraints are, so the configuration is not cargo cult.
 
 > Requires wingman-cli 0.16.1 or newer. On 0.16.0 and earlier neither fix
-> exists: pin the efforts by hand and run the stack with `make up-guard`.
+> exists, and the missing one that matters is the context window: `make
+> up-guard` would keep requests from being rejected, and the session would still
+> end in `[METAL] Insufficient Memory`. Upgrade rather than work around it.
 
 ## 1. `reasoning_effort` — fixed in the CLI
 
@@ -51,13 +53,24 @@ the model name resolves to that catalog entry, which is why
 ### The effort guard
 
 `effort-guard` did this clamping in the gateway before the CLI could. It is
-still in the repository but **off by default**, because it now duplicates work
-the client already does. Enable it with `make up-guard` when:
+still in the repository but **off by default**, because for the setup this
+repository documents it now duplicates work the client already does.
 
-- the CLI is older than 0.16.1,
+What it still covers is that the catalog clamping binds *wingman-agent only*.
+Enable it with `make up-guard` when:
+
+- something other than wingman-agent talks to the gateway. The gateway is a
+  general OpenAI-, Anthropic- and Gemini-compatible endpoint, and any other
+  client has no model catalog to clamp against — `high` is an ordinary value to
+  send, and it comes back as HTTP 500. This is the case that keeps the guard in
+  the repository.
 - the model is exposed under a name the catalog does not recognise, so there is
-  no `Efforts` list to clamp against, or
-- something other than wingman-agent talks to the gateway.
+  no `Efforts` list to clamp against. Prefer fixing the name; see
+  [architecture.md](architecture.md#the-model-name-chain).
+
+An older CLI is *not* on that list. 0.16.1 is required anyway for
+`WINGMAN_CONTEXT_WINDOW`, and the guard does nothing about the memory failure
+that its absence causes.
 
 It applies the same mapping, rounding down so a request never gets more
 reasoning than it asked for:
