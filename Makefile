@@ -15,6 +15,11 @@ GUARD := --profile guard
 # The platform's view of the guard, when the guard is in the path.
 GUARD_URL := http://effort-guard:8080/v1
 
+# Toolchain for `make test`. Keep in sync with the build stage of
+# effort-guard/Dockerfile, so the tests run on the version the image is built
+# with rather than on whatever the floating major tag resolves to today.
+GO_IMAGE := golang:1.27-alpine
+
 # Load .env so PROFILE / KV_BITS / WINGMAN_PORT reach the recipes below.
 DOTENV := set -a; [ -f "$(REPO_DIR)/.env" ] && . "$(REPO_DIR)/.env"; set +a
 
@@ -71,7 +76,7 @@ build: ## Build the effort-guard image
 	docker compose $(GUARD) build
 
 test: ## Run the effort-guard unit tests
-	docker run --rm -v "$(REPO_DIR)/effort-guard":/src -w /src golang:1-alpine \
+	docker run --rm -v "$(REPO_DIR)/effort-guard":/src -w /src $(GO_IMAGE) \
 	  sh -c 'go vet ./... && go test -v ./...'
 
 doctor: ## Verify model server, gateway and CLI end to end
