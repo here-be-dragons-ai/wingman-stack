@@ -50,6 +50,16 @@ var supported = map[string]string{
 	"max":     "xhigh",
 }
 
+// fallback is the level an effort lands on when the template rejects it and it
+// cannot be ranked against the ones above -- "auto", which is in wingman's own
+// effortValues, or anything a future client invents.
+//
+// Dropping the field instead would hand the request to the template's own
+// default, and that default is xhigh: the most expensive level, reached by a
+// request that never asked for it, on a machine where the expensive level is
+// what exhausts the KV cache. medium keeps the round-down promise above.
+const fallback = "medium"
+
 // disabled lists the values mlx-vlm turns into enable_thinking=false. They are
 // forwarded untouched, because that skips the template branch validating the
 // effort altogether. Source: mlx_vlm/server/request_normalization.py.
@@ -198,11 +208,7 @@ func clampField(payload map[string]any, field string) (from, to string, changed 
 	mapped, known := supported[value]
 
 	if !known {
-		// An effort that the template rejects and that cannot be ranked
-		// against the supported levels. Drop the field so the template
-		// applies its own default (xhigh) instead of raising.
-		delete(payload, field)
-		return raw, "(dropped)", true
+		mapped = fallback
 	}
 
 	if mapped == value {
