@@ -69,7 +69,11 @@ reasoning than it asked for:
 | `minimal` | `low` |
 | `low`, `medium`, `xhigh` | unchanged |
 | `none`, `off`, `disabled`, `false`, `0` | unchanged (disables thinking) |
-| anything else | field dropped, template default applies |
+| `auto`, or anything else unrankable | `medium` |
+
+The last row used to drop the field instead, which handed the request to the
+template's own default — and that default is `xhigh`, the most expensive level,
+for a request that never asked for it. `medium` keeps the round-down promise.
 
 `make test` runs its unit tests.
 

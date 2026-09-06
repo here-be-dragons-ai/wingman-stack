@@ -96,22 +96,60 @@ func TestRewriteBodyResponsesDialect(t *testing.T) {
 	}
 }
 
-func TestRewriteBodyDropsUnrankableEffort(t *testing.T) {
-	body := []byte(`{"reasoning_effort":"turbo"}`)
+// TestRewriteBodyClampsUnrankableEffort covers the values that are neither
+// supported nor rankable. Dropping the field would leave the template to apply
+// its own default of xhigh -- the most expensive level, for a request that
+// never asked for it.
+func TestRewriteBodyClampsUnrankableEffort(t *testing.T) {
+	// "auto" is in wingman's own effortValues; "turbo" stands for whatever a
+	// third-party client invents.
+	for _, in := range []string{"auto", "turbo"} {
+		t.Run(in, func(t *testing.T) {
+			body := []byte(`{"reasoning_effort":"` + in + `"}`)
 
-	out, _, to, changed := rewriteBody(body)
+			out, from, to, changed := rewriteBody(body)
 
-	if !changed || to != "(dropped)" {
-		t.Fatalf("changed/to = %v/%q, want true/(dropped)", changed, to)
+			if !changed || to != fallback {
+				t.Fatalf("changed/to = %v/%q, want true/%q", changed, to, fallback)
+			}
+
+			if from != in {
+				t.Fatalf("from = %q, want %q", from, in)
+			}
+
+			var payload map[string]any
+			if err := json.Unmarshal(out, &payload); err != nil {
+				t.Fatalf("rewritten body is not valid JSON: %v", err)
+			}
+
+			if got := payload["reasoning_effort"]; got != fallback {
+				t.Fatalf("reasoning_effort = %v, want %q", got, fallback)
+			}
+		})
+	}
+}
+
+// TestSupportedRoundsDown pins the invariant the package doc claims, so a new
+// entry cannot quietly hand back more reasoning than was asked for.
+func TestSupportedRoundsDown(t *testing.T) {
+	rank := map[string]int{"minimal": 0, "low": 1, "medium": 2, "high": 3, "xhigh": 4, "max": 5}
+
+	for in, out := range supported {
+		// Documented exception: low is the least the template offers while
+		// thinking is on, so minimal has nowhere lower to go.
+		if in == "minimal" {
+			continue
+		}
+
+		if rank[out] > rank[in] {
+			t.Errorf("supported[%q] = %q rounds up", in, out)
+		}
 	}
 
-	var payload map[string]any
-	if err := json.Unmarshal(out, &payload); err != nil {
-		t.Fatalf("rewritten body is not valid JSON: %v", err)
-	}
-
-	if _, present := payload["reasoning_effort"]; present {
-		t.Fatal("unrankable effort should be removed so the template default applies")
+	// The fallback has to be a level the template accepts as-is, or an
+	// unrankable effort would still reach the upstream and raise.
+	if supported[fallback] != fallback {
+		t.Errorf("fallback %q is not a level the template accepts", fallback)
 	}
 }
 
