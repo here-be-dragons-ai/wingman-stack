@@ -21,7 +21,7 @@
 | `LLM_UPSTREAM_URL` | `http://host.docker.internal:8888` | the model server, as seen from inside a container |
 | `LLM_MODEL` | `Qwen3.8-27B-local` | the id the upstream expects; must equal `MODEL_ALIAS` |
 | `LLM_TOKEN` | `sk-local` | forwarded upstream; `mlx-vlm` ignores it |
-| `LLM_URL` | `${LLM_UPSTREAM_URL}/v1` | where the platform sends requests; `make up-guard` sets it to the guard |
+| `LLM_URL` | `${LLM_UPSTREAM_URL}/v1` | where the platform sends requests. `make up-guard` sets it to the guard; `make up` puts it back and removes the guard, so the two commands select the topology and never leave a bypassed container behind |
 | `LOG_REWRITES` | `1` | log every effort rewrite in the guard |
 | `PROFILE`, `KV_BITS` | `roomy`, `8` | passed through to `make model` |
 

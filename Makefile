@@ -31,7 +31,16 @@ help: ## Show this help
 	@echo "                      make up      (terminal 2)"
 	@echo "                      make doctor  (verifies the whole chain)"
 
-up: ## Start the gateway
+# Plain `docker compose up -d` would recreate the platform pointing straight at
+# the upstream while leaving a running guard untouched -- up but bypassed, which
+# reads as healthy in `make ps`. This is the direct topology, so say so and take
+# the guard down with it; `make up-guard` is how you keep it.
+up: ## Start the gateway, direct to the backend (removes the effort guard)
+	@if docker compose $(GUARD) ps --services --filter status=running 2>/dev/null \
+	   | grep -qx effort-guard; then \
+	  echo "effort-guard is running; removing it -- 'make up' is the direct topology"; \
+	  docker compose $(GUARD) rm -sf effort-guard; \
+	fi
 	docker compose up -d
 
 up-guard: ## Start the gateway with the optional effort guard in front of the backend
